@@ -1,0 +1,34 @@
+module logback.classic.blackbox {
+    requires java.xml;
+    requires ch.qos.logback.core;
+    requires ch.qos.logback.classic;
+    requires jakarta.mail;
+
+    requires org.dom4j;
+    requires greenmail;
+
+    requires org.junit.jupiter.api;
+    requires org.junit.jupiter.engine;
+    requires org.slf4j;
+
+    requires org.eclipse.jetty.ee10.servlet;
+
+    requires java.logging;
+    requires org.jline.nativ;
+
+    requires org.jline.jansi.core;
+
+    exports ch.qos.logback.classic.blackbox;
+    exports ch.qos.logback.classic.blackbox.joran;
+    exports ch.qos.logback.classic.blackbox.joran.conditional;
+    exports ch.qos.logback.classic.blackbox.joran.spi;
+    exports ch.qos.logback.classic.blackbox.html;
+    exports ch.qos.logback.classic.blackbox.net;
+    exports ch.qos.logback.classic.blackbox.issue;
+
+
+
+    // resources in named modules are accessible only if opened
+    opens asResource;
+    exports ch.qos.logback.classic.blackbox.util;
+}

@@ -1,0 +1,318 @@
+/*
+ * Logback: the reliable, generic, fast and flexible logging framework.
+ * Copyright (C) 1999-2026, QOS.ch. All rights reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under
+ * either the terms of the Eclipse Public License v2.0 as published by
+ * the Eclipse Foundation
+ *
+ *   or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1
+ * as published by the Free Software Foundation.
+ */
+package ch.qos.logback.core.model.processor;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.function.Supplier;
+
+import ch.qos.logback.core.Context;
+import ch.qos.logback.core.model.Model;
+import ch.qos.logback.core.model.ModelHandlerFactoryMethod;
+import ch.qos.logback.core.model.NamedComponentModel;
+import ch.qos.logback.core.spi.ContextAwareBase;
+import ch.qos.logback.core.spi.FilterReply;
+
+/**
+ * DefaultProcessor traverses the Model produced at an earlier step and performs actual
+ * configuration of logback according to the handlers it was given.
+ *
+ * @author Ceki G&uuml;lc&uuml;
+ * @since 1.3.0
+ */
+public class DefaultProcessor extends ContextAwareBase {
+
+    interface TraverseMethod {
+        int traverse(Model model, ModelFilter modelFiler);
+    }
+
+    final protected ModelInterpretationContext mic;
+    final HashMap<Class<? extends Model>, ModelHandlerFactoryMethod> modelClassToHandlerMap = new HashMap<>();
+    final HashMap<Class<? extends Model>, List<Supplier<ModelHandlerBase>>> modelClassToDependencyAnalyserMap = new HashMap<>();
+
+    ChainedModelFilter phaseOneFilter = new ChainedModelFilter();
+    ChainedModelFilter phaseTwoFilter = new ChainedModelFilter();
+
+    public DefaultProcessor(Context context, ModelInterpretationContext mic) {
+        this.setContext(context);
+        this.mic = mic;
+    }
+
+    public void addHandler(Class<? extends Model> modelClass, ModelHandlerFactoryMethod modelFactoryMethod) {
+
+        modelClassToHandlerMap.put(modelClass, modelFactoryMethod);
+
+        ProcessingPhase phase = determineProcessingPhase(modelClass);
+        switch (phase) {
+            case FIRST:
+                getPhaseOneFilter().allow(modelClass);
+                break;
+            case SECOND:
+                getPhaseTwoFilter().allow(modelClass);
+                break;
+            default:
+                throw new IllegalArgumentException("unexpected value " + phase + " for model class " + modelClass.getName());
+        }
+    }
+
+    private ProcessingPhase determineProcessingPhase(Class<? extends Model> modelClass) {
+
+        PhaseIndicator phaseIndicator = modelClass.getAnnotation(PhaseIndicator.class);
+        if (phaseIndicator == null) {
+            return ProcessingPhase.FIRST;
+        }
+
+        ProcessingPhase phase = phaseIndicator.phase();
+        return phase;
+    }
+
+    public void addAnalyser(Class<? extends Model> modelClass, Supplier<ModelHandlerBase> analyserSupplier) {
+        modelClassToDependencyAnalyserMap.computeIfAbsent(modelClass, x -> new ArrayList<>()).add(analyserSupplier);
+    }
+
+    private void traversalLoop(TraverseMethod traverseMethod, Model model, ModelFilter modelfFilter, String phaseName) {
+        int LIMIT = 3;
+        for (int i = 0; i < LIMIT; i++) {
+            int handledModelCount = traverseMethod.traverse(model, modelfFilter);
+            if (handledModelCount == 0)
+                break;
+        }
+    }
+
+    public void process(Model topModel) {
+
+        if (topModel == null) {
+            addError("Expecting non null model to process");
+            return;
+        }
+        initialObjectPush();
+
+        mainTraverse(topModel, getPhaseOneFilter());
+        analyseDependencies(topModel);
+        traversalLoop(this::secondPhaseTraverse, topModel, getPhaseTwoFilter(), "phase 2");
+
+        addInfo("End of configuration.");
+        finalObjectPop();
+    }
+
+    private void finalObjectPop() {
+        mic.popObject();
+    }
+
+    private void initialObjectPush() {
+        mic.pushObject(context);
+    }
+
+    public ChainedModelFilter getPhaseOneFilter() {
+        return phaseOneFilter;
+    }
+
+    public ChainedModelFilter getPhaseTwoFilter() {
+        return phaseTwoFilter;
+    }
+
+
+    protected void analyseDependencies(Model model) {
+
+        List<Supplier<ModelHandlerBase>> analyserSupplierList = modelClassToDependencyAnalyserMap.get(model.getClass());
+        ModelHandlerBase analyser = null;
+
+        if (analyserSupplierList != null) {
+            for (Supplier<ModelHandlerBase> analyserSupplier : analyserSupplierList) {
+
+                if (analyserSupplier != null) {
+                    analyser = analyserSupplier.get();
+                }
+
+                if (analyser != null && !model.isSkipped()) {
+                    callAnalyserHandleOnModel(model, analyser);
+                }
+            }
+        }
+
+        for (Model m : model.getSubModels()) {
+            analyseDependencies(m);
+        }
+
+        if (analyser != null && !model.isSkipped()) {
+            callAnalyserPostHandleOnModel(model, analyser);
+        }
+
+
+    }
+
+    private void callAnalyserPostHandleOnModel(Model model, ModelHandlerBase analyser) {
+        try {
+            analyser.postHandle(mic, model);
+        } catch (ModelHandlerException e) {
+            addError("Failed to invoke postHandle on model " + model.getTag(), e);
+        }
+    }
+
+    private void callAnalyserHandleOnModel(Model model, ModelHandlerBase analyser) {
+        try {
+            analyser.handle(mic, model);
+        } catch (ModelHandlerException e) {
+            addError("Failed to traverse model " + model.getTag(), e);
+        }
+    }
+
+    static final int DENIED = -1;
+
+    private ModelHandlerBase createHandler(Model model) {
+        ModelHandlerFactoryMethod modelFactoryMethod = modelClassToHandlerMap.get(model.getClass());
+
+        if (modelFactoryMethod == null) {
+            addError("Can't handle model of type " + model.getClass() + "  with tag: " + model.getTag() + " at line "
+                    + model.getLineNumber());
+            return null;
+        }
+
+        ModelHandlerBase handler = modelFactoryMethod.make(context, mic);
+        if (handler == null)
+            return null;
+        if (!handler.isSupportedModelType(model)) {
+            addWarn("Handler [" + handler.getClass() + "] does not support " + model.idString());
+            return null;
+        }
+        return handler;
+    }
+
+    protected int mainTraverse(Model model, ModelFilter modelFiler) {
+
+        FilterReply filterReply = modelFiler.decide(model);
+        if (filterReply == FilterReply.DENY)
+            return DENIED;
+
+        int count = 0;
+
+        try {
+            ModelHandlerBase handler = null;
+            boolean unhandled = model.isUnhandled();
+
+            if (unhandled) {
+                handler = createHandler(model);
+                if (handler != null) {
+                    handler.handle(mic, model);
+                    model.markAsHandled();
+                    count++;
+                }
+            }
+            // recurse into submodels handled or not
+            if (!model.isSkipped()) {
+                for (Model m : model.getSubModels()) {
+                    count += mainTraverse(m, modelFiler);
+                }
+            }
+
+            if (unhandled && handler != null) {
+                handler.postHandle(mic, model);
+            }
+        } catch (ModelHandlerException e) {
+            addError("Failed to traverse model " + model.getTag(), e);
+        }
+        return count;
+    }
+
+    protected int secondPhaseTraverse(Model model, ModelFilter modelFilter) {
+
+        FilterReply filterReply = modelFilter.decide(model);
+        if (filterReply == FilterReply.DENY) {
+            return 0;
+        }
+
+        int count = 0;
+
+        try {
+
+            boolean allDependenciesStarted = allDependenciesStarted(model);
+            ModelHandlerBase handler = null;
+            if (model.isUnhandled() && allDependenciesStarted) {
+                handler = createHandler(model);
+                if (handler != null) {
+                    handler.handle(mic, model);
+                    model.markAsHandled();
+                    count++;
+                }
+            }
+
+            if (!allDependenciesStarted && !dependencyIsLocatedInASubmodel(model)) {
+                return count;
+            }
+
+            if (!model.isSkipped()) {
+                for (Model m : model.getSubModels()) {
+                    count += secondPhaseTraverse(m, modelFilter);
+                }
+            }
+            if (handler != null) {
+                handler.postHandle(mic, model);
+            }
+        } catch (ModelHandlerException e) {
+            addError("Failed to traverse model " + model.getTag(), e);
+        }
+        return count;
+    }
+
+    private boolean dependencyIsLocatedInASubmodel(Model model) {
+        List<String> dependencyNames = this.mic.getDependencyNamesForModel(model);
+        if (dependencyNames == null || dependencyNames.isEmpty()) {
+            return false;
+        }
+
+        return recursiveIsDependencyPredicate(dependencyNames, model);
+    }
+
+    private boolean recursiveIsDependencyPredicate(List<String> dependencyNames, Model model) {
+
+        if (model instanceof NamedComponentModel) {
+            NamedComponentModel namedComponentModel = (NamedComponentModel) model;
+            String modelName = namedComponentModel.getName();
+            if (dependencyNames.contains(modelName)) {
+                return true;
+            }
+        }
+
+        for(Model submodel : model.getSubModels()) {
+            boolean result = recursiveIsDependencyPredicate(dependencyNames, submodel);
+            if(result)
+                return true;
+        }
+
+        return false;
+    }
+
+    private boolean allDependenciesStarted(Model model) {
+        // assumes that DependencyDefinitions have been registered
+        List<String> dependencyNames = mic.getDependencyNamesForModel(model);
+
+        if (dependencyNames == null || dependencyNames.isEmpty()) {
+            return true;
+        }
+        for (String name : dependencyNames) {
+            boolean isRegistered = AppenderDeclarationAnalyser.isAppenderDeclared(mic, name);
+            if (!isRegistered) {
+                // non registered dependencies are not taken into account
+                continue;
+            }
+            boolean isStarted = mic.isNamedDependemcyStarted(name);
+            if (!isStarted) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+}

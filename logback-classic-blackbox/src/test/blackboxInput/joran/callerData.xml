@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration>
+
+<configuration>
+  <import class="ch.qos.logback.classic.blackbox.evaluator.MatchHelloEvaluator"/>
+  <import class="ch.qos.logback.core.testUtil.StringListAppender"/>
+
+  <evaluator name="helloEval" class="MatchHelloEvaluator">
+    <checkForInclusion>hello</checkForInclusion>
+  </evaluator>
+
+  <appender name="STR_LIST" class="StringListAppender">
+    <layout>
+      <Pattern>%caller{4, helloEval}%d %level - %m%n</Pattern>
+    </layout>
+  </appender>
+
+  <root>
+    <level value="DEBUG" />
+    <appender-ref ref="STR_LIST" />
+  </root>
+
+
+
+</configuration>

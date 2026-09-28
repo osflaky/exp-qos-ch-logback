@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<x>
+  <stack name="BEGIN"/>
+  <condition class="ch.qos.logback.core.boolex.ExpressionPropertyCondition">
+    <expression>propertyEquals("ki1", "val1")</expression>
+  </condition>
+  <if>
+    <then>
+      <stack name="a"/>
+    </then>   
+  </if>
+  <stack name="END"/>
+</x>

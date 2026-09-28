@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<included>
+
+    <appender name="LIST"  class="ch.qos.logback.core.read.ListAppender"/>
+
+    <root level="INFO">
+        <condition class="ch.qos.logback.core.boolex.ExpressionPropertyCondition">
+            <expression>propertyEquals("missing","true")</expression>
+        </condition>
+        <if>
+            <then>
+                <appender-ref ref="MISSING" />
+            </then>
+            <else>
+                <appender-ref ref="LIST" />
+            </else>
+        </if>
+    </root>
+
+</included>

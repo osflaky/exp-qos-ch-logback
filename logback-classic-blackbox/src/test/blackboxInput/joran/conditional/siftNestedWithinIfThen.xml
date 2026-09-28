@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration>
+
+<configuration debug="false">
+
+    <condition class="ch.qos.logback.core.boolex.ExpressionPropertyCondition">
+        <expression>isDefined("HOSTNAME")</expression>
+    </condition>
+    <if>
+        <then>
+            <appender name="SIFT" class="ch.qos.logback.classic.sift.SiftingAppender">
+
+                <discriminator>
+                    <key>userid</key>
+                    <defaultValue>ifThenDefault</defaultValue>
+                </discriminator>
+                <sift>
+                    <appender name="list-${userid}"
+                              class="ch.qos.logback.core.read.ListAppender"/>
+                </sift>
+            </appender>
+        </then>
+    </if>
+
+    <root level="DEBUG">
+        <appender-ref ref="SIFT"/>
+    </root>
+
+</configuration>

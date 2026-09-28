@@ -1,0 +1,14 @@
+<configuration>
+
+    <condition class="ch.qos.logback.core.boolex.ExpressionPropertyCondition">
+        <expression>propertyEquals("missing","true")</expression>
+    </condition>
+    <if>
+        <then>
+            <include optional="true" resource="missing.xml"/>
+        </then>
+        <else>
+            <include file="src/test/blackboxInput/joran/conditional/includedConditionalWithAppenderInclusion.xml"/>
+        </else>
+    </if>
+</configuration>

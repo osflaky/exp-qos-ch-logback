@@ -1,0 +1,36 @@
+<!--
+  ~ Logback: the reliable, generic, fast and flexible logging framework.
+  ~ Copyright (C) 1999-2026, QOS.ch. All rights reserved.
+  ~
+  ~ This program and the accompanying materials are dual-licensed under
+  ~ either the terms of the Eclipse Public License v2.0 as published by
+  ~ the Eclipse Foundation
+  ~
+  ~   or (per the licensee's choosing)
+  ~
+  ~ under the terms of the GNU Lesser General Public License version 2.1
+  ~ as published by the Free Software Foundation.
+  -->
+
+<configuration>
+  <appender name="TestLogfile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/test-output/perf/logback_with_flush.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+      <fileNamePattern>target/test-output/perf/logback_with_flush.log.%i</fileNamePattern>
+      <minIndex>1</minIndex>
+      <maxIndex>1</maxIndex>
+    </rollingPolicy>
+    <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+      <maxFileSize>1000KB</maxFileSize>
+    </triggeringPolicy>
+    <encoder>
+      <Pattern>%d{ISO8601} %5p [%t] %c - %m%n</Pattern>
+      <immediateFlush>true</immediateFlush>
+      <!--<charset>UTF-8</charset>-->
+    </encoder>
+  </appender>
+  <root>
+    <level value="debug"/>
+    <appender-ref ref="TestLogfile"/>
+  </root>
+</configuration>
